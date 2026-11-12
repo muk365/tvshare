@@ -623,8 +623,8 @@ class App {
         outboundStream = this.currentVideoFile.stream;
       } else {
         const capture = this.dom.videoElement.captureStream 
-          ? this.dom.videoElement.captureStream(60) 
-          : this.dom.videoElement.mozCaptureStream(60);
+          ? this.dom.videoElement.captureStream(30) 
+          : this.dom.videoElement.mozCaptureStream(30);
 
         const cleanAudioTrack = this.audioEngine.getStreamAudioTrack();
         const outboundTracks = [
@@ -632,7 +632,11 @@ class App {
           cleanAudioTrack || (capture.getAudioTracks()[0] || null)
         ].filter(Boolean);
 
-        outboundStream = new MediaStream(outboundTracks);
+        if (outboundTracks.length === 0) {
+          outboundStream = capture;
+        } else {
+          outboundStream = new MediaStream(outboundTracks);
+        }
       }
 
       // 4. Initialize Sync Engine in Host mode

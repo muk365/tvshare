@@ -57,6 +57,7 @@ export class SyncEngine {
         // Initialize Host Peer
         this.peer = new PeerClass(this.roomId, {
           debug: 1,
+          pingInterval: 5000,
           config: {
             iceServers: [
               { urls: 'stun:stun.l.google.com:19302' },
@@ -97,9 +98,18 @@ export class SyncEngine {
         this.peer.on('disconnected', () => {
           this.onStatusChange('disconnected', {});
           if (!this.isDestroyed && this.peer && !this.peer.destroyed) {
+            console.warn('[Host Disconnected from broker] Reconnecting...');
             this.peer.reconnect();
           }
         });
+
+        // Periodic signaling keep-alive to prevent background tab sleeping disconnects
+        if (this.peerKeepAlive) clearInterval(this.peerKeepAlive);
+        this.peerKeepAlive = setInterval(() => {
+          if (!this.isDestroyed && this.peer && !this.peer.destroyed && this.peer.disconnected) {
+            this.peer.reconnect();
+          }
+        }, 3000);
 
       } catch (err) {
         reject(err);
@@ -336,8 +346,11 @@ export class SyncEngine {
           throw new Error('PeerJS library not loaded.');
         }
 
+        const cleanRoomId = String(hostRoomId).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+
         this.peer = new PeerClass({
           debug: 1,
+          pingInterval: 5000,
           config: {
             iceServers: [
               { urls: 'stun:stun.l.google.com:19302' },
@@ -353,7 +366,7 @@ export class SyncEngine {
 
         this.peer.on('open', (myId) => {
           this.onStatusChange('open', { id: myId, isHost: false });
-          this.connectToHost(hostRoomId).then(resolve).catch(reject);
+          this.connectToHost(cleanRoomId).then(resolve).catch(reject);
         });
 
         // Listen for incoming media call from Host
@@ -373,8 +386,12 @@ export class SyncEngine {
 
         this.peer.on('error', (err) => {
           console.error('[SyncEngine Client Error]', err);
-          this.onStatusChange('error', { error: err });
-          reject(err);
+          let friendly = err.message || err;
+          if (err.type === 'peer-unavailable') {
+            friendly = `Watch party room "${cleanRoomId}" not found. Verify the Host tab is active and party is started!`;
+          }
+          this.onStatusChange('error', { error: { message: friendly } });
+          reject(new Error(friendly));
         });
 
       } catch (err) {
@@ -388,22 +405,37 @@ export class SyncEngine {
    * @param {string} hostRoomId
    */
   connectToHost(hostRoomId) {
+    const cleanId = String(hostRoomId).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+
     return new Promise((resolve, reject) => {
-      this.hostConn = this.peer.connect(hostRoomId, { reliable: true });
+      // Connect without legacy { reliable: true } wrapper for fast native SCTP connection
+      this.hostConn = this.peer.connect(cleanId);
+
+      let isDone = false;
 
       const timeout = setTimeout(() => {
-        reject(new Error('Connection to host timed out. Please check the room code.'));
-      }, 10000);
+        if (!isDone) {
+          isDone = true;
+          reject(new Error(`Connection to host "${cleanId}" timed out. Make sure the Host tab is open and has started the party!`));
+        }
+      }, 15000);
 
       this.hostConn.on('open', () => {
+        if (isDone) return;
+        isDone = true;
         clearTimeout(timeout);
-        this.onStatusChange('connected', { hostRoomId });
+        this.onStatusChange('connected', { hostRoomId: cleanId });
 
         // Send HELLO
         this.hostConn.send({
           type: 'HELLO',
           name: this.userName,
           color: this.userColor
+        });
+
+        // Explicitly request video stream
+        this.hostConn.send({
+          type: 'REQUEST_STREAM'
         });
 
         resolve(this.hostConn);
@@ -418,8 +450,11 @@ export class SyncEngine {
       });
 
       this.hostConn.on('error', (err) => {
-        clearTimeout(timeout);
-        reject(err);
+        if (!isDone) {
+          isDone = true;
+          clearTimeout(timeout);
+          reject(err);
+        }
       });
     });
   }
@@ -540,6 +575,7 @@ export class SyncEngine {
 
   destroy() {
     this.isDestroyed = true;
+    if (this.peerKeepAlive) clearInterval(this.peerKeepAlive);
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.hostConn) this.hostConn.close();
     this.clients.forEach(c => {
