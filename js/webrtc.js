@@ -208,6 +208,7 @@ export class SyncEngine {
     this.clientPc = null;
     this.clientDc = null;
     this.hostConn = null; // Wrapper with .send() and .open
+    this.remoteMediaStream = null;
     this.clientPendingCandidates = [];
   }
 
@@ -243,8 +244,8 @@ export class SyncEngine {
     await this.signaling.connect();
 
     // Host subscribes to incoming messages from any viewer in this room
-    const hostTopic = `cinesync/v2/${this.roomId}/host/#`;
-    await this.signaling.subscribe(hostTopic);
+    await this.signaling.subscribe(`cinesync/v2/${this.roomId}/host`);
+    await this.signaling.subscribe(`cinesync/v2/${this.roomId}/host/#`);
 
     // Listen for viewer signals
     this.signaling.onMessage((topic, data) => {
@@ -283,7 +284,9 @@ export class SyncEngine {
             // Process any early buffered ICE candidates
             if (clientObj.pendingCandidates && clientObj.pendingCandidates.length > 0) {
               for (const cand of clientObj.pendingCandidates) {
-                await clientObj.pc.addIceCandidate(new RTCIceCandidate(cand));
+                try {
+                  await clientObj.pc.addIceCandidate(new RTCIceCandidate(cand));
+                } catch (ce) {}
               }
               clientObj.pendingCandidates = [];
             }
@@ -295,6 +298,7 @@ export class SyncEngine {
       }
 
       case 'CANDIDATE': {
+        if (!data.candidate) return;
         const clientObj = this.clients.get(clientId);
         if (clientObj && clientObj.pc) {
           if (clientObj.pc.remoteDescription && clientObj.pc.remoteDescription.type) {
@@ -316,11 +320,21 @@ export class SyncEngine {
    * Initiates WebRTC PeerConnection and DataChannel for a joining viewer
    */
   async handleHostViewerJoin(clientId, data) {
-    // If existing client reconnected, clean up previous connection
+    // If client is already connecting or connected, DO NOT destroy the connection!
     if (this.clients.has(clientId)) {
-      const prev = this.clients.get(clientId);
-      try { if (prev.dc) prev.dc.close(); } catch (e) {}
-      try { if (prev.pc) prev.pc.close(); } catch (e) {}
+      const existing = this.clients.get(clientId);
+      if (existing.pc && existing.pc.connectionState !== 'closed' && existing.pc.connectionState !== 'failed') {
+        console.log(`[SyncEngine Host] Client ${clientId} is already negotiating. Re-sending local offer.`);
+        if (existing.pc.localDescription) {
+          this.signaling.send(`cinesync/v2/${this.roomId}/client/${clientId}`, {
+            type: 'OFFER',
+            sdp: existing.pc.localDescription
+          });
+        }
+        return;
+      }
+      try { if (existing.dc) existing.dc.close(); } catch (e) {}
+      try { if (existing.pc) existing.pc.close(); } catch (e) {}
       this.clients.delete(clientId);
     }
 
@@ -398,6 +412,13 @@ export class SyncEngine {
       this.removeClient(clientId);
     };
 
+    pc.onconnectionstatechange = () => {
+      console.log(`[SyncEngine Host] Client ${clientId} connectionState:`, pc.connectionState);
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        this.removeClient(clientId);
+      }
+    };
+
     // 3. ICE Candidate gathering
     pc.onicecandidate = (event) => {
       if (event.candidate && this.signaling) {
@@ -448,7 +469,6 @@ export class SyncEngine {
       case 'REQUEST_STREAM': {
         const clientObj = this.clients.get(clientId);
         if (clientObj && clientObj.pc && this.mediaStream) {
-          // Re-send tracks if needed
           const senders = clientObj.pc.getSenders();
           this.mediaStream.getTracks().forEach((track) => {
             const sender = senders.find((s) => s.track && s.track.kind === track.kind);
@@ -598,17 +618,39 @@ export class SyncEngine {
     this.isHost = false;
     this.roomId = this.cleanRoomId(hostRoomId);
     this.clientId = 'cl_' + Math.random().toString(36).substring(2, 9);
+    this.remoteMediaStream = null;
 
     console.log(`[SyncEngine Client] Connecting to room "${this.roomId}" as ${this.userName} (${this.clientId})`);
 
     return new Promise(async (resolve, reject) => {
       let isResolved = false;
+      let hasReceivedOffer = false;
       let joinRetryInterval = null;
       let timeoutTimer = null;
 
       const cleanup = () => {
-        if (joinRetryInterval) clearInterval(joinRetryInterval);
-        if (timeoutTimer) clearTimeout(timeoutTimer);
+        if (joinRetryInterval) {
+          clearInterval(joinRetryInterval);
+          joinRetryInterval = null;
+        }
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer);
+          timeoutTimer = null;
+        }
+      };
+
+      const markConnected = () => {
+        if (isResolved) return;
+        isResolved = true;
+        cleanup();
+        console.log('[SyncEngine Client] Connection fully established with Host!');
+        this.onStatusChange('connected', { hostRoomId: this.roomId });
+        const wrapper = this.hostConn || {
+          send: (d) => this.safeSendDc(this.clientDc, d),
+          get open() { return true; },
+          close: () => { if (this.clientDc) this.clientDc.close(); }
+        };
+        resolve(wrapper);
       };
 
       try {
@@ -626,9 +668,27 @@ export class SyncEngine {
 
         // Receive remote MediaStream from Host
         pc.ontrack = (event) => {
-          console.log('[SyncEngine Client] Remote video track received from Host!');
-          if (event.streams && event.streams[0]) {
-            this.onStreamReceived(event.streams[0]);
+          console.log('[SyncEngine Client] Remote video track received from Host!', event.track.kind);
+          if (!this.remoteMediaStream) {
+            this.remoteMediaStream = new MediaStream();
+          }
+          if (event.track) {
+            const existing = this.remoteMediaStream.getTracks().find(t => t.kind === event.track.kind);
+            if (existing) this.remoteMediaStream.removeTrack(existing);
+            this.remoteMediaStream.addTrack(event.track);
+          }
+          const streamToPass = (event.streams && event.streams[0]) || this.remoteMediaStream;
+          this.onStreamReceived(streamToPass);
+          markConnected();
+        };
+
+        // Track connection state
+        pc.onconnectionstatechange = () => {
+          console.log('[SyncEngine Client] WebRTC connectionState:', pc.connectionState);
+          if (pc.connectionState === 'connected') {
+            markConnected();
+          } else if (pc.connectionState === 'failed') {
+            console.warn('[SyncEngine Client] WebRTC connectionState failed.');
           }
         };
 
@@ -646,14 +706,8 @@ export class SyncEngine {
 
           dc.onopen = () => {
             console.log('[SyncEngine Client] DataChannel successfully open!');
-            cleanup();
-            if (!isResolved) {
-              isResolved = true;
-              this.onStatusChange('connected', { hostRoomId: this.roomId });
-              // Request stream actively
-              this.safeSendDc(dc, { type: 'REQUEST_STREAM' });
-              resolve(this.hostConn);
-            }
+            markConnected();
+            this.safeSendDc(dc, { type: 'REQUEST_STREAM' });
           };
 
           dc.onmessage = (msgEvent) => {
@@ -693,13 +747,21 @@ export class SyncEngine {
           switch (data.type) {
             case 'OFFER': {
               console.log('[SyncEngine Client] Received SDP Offer from Host');
+              hasReceivedOffer = true;
+              if (joinRetryInterval) {
+                clearInterval(joinRetryInterval);
+                joinRetryInterval = null;
+              }
+
               try {
                 await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
 
                 // Process early buffered candidates
                 if (this.clientPendingCandidates.length > 0) {
                   for (const cand of this.clientPendingCandidates) {
-                    await pc.addIceCandidate(new RTCIceCandidate(cand));
+                    try {
+                      await pc.addIceCandidate(new RTCIceCandidate(cand));
+                    } catch (ce) {}
                   }
                   this.clientPendingCandidates = [];
                 }
@@ -721,6 +783,7 @@ export class SyncEngine {
             }
 
             case 'CANDIDATE': {
+              if (!data.candidate) return;
               if (pc.remoteDescription && pc.remoteDescription.type) {
                 try {
                   await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
@@ -735,9 +798,9 @@ export class SyncEngine {
           }
         });
 
-        // 4. Send JOIN signal to Host with periodic retry until connected
+        // 4. Send JOIN signal to Host with retry only until first offer received
         const sendJoin = () => {
-          if (isResolved || (this.clientDc && this.clientDc.readyState === 'open')) return;
+          if (isResolved || hasReceivedOffer) return;
           console.log(`[SyncEngine Client] Sending JOIN signal to Host (room: ${this.roomId})...`);
           this.signaling.send(`cinesync/v2/${this.roomId}/host`, {
             type: 'JOIN',
@@ -748,9 +811,9 @@ export class SyncEngine {
         };
 
         sendJoin();
-        joinRetryInterval = setInterval(sendJoin, 2500);
+        joinRetryInterval = setInterval(sendJoin, 3000);
 
-        // 5. Connection Timeout Safeguard
+        // 5. Connection Timeout Safeguard (only if no offer or connection at all after 15s)
         timeoutTimer = setTimeout(() => {
           cleanup();
           if (!isResolved) {
@@ -759,7 +822,7 @@ export class SyncEngine {
             this.onStatusChange('error', { error: { message: errMsg } });
             reject(new Error(errMsg));
           }
-        }, 14000);
+        }, 15000);
 
       } catch (err) {
         cleanup();

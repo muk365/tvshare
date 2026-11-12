@@ -265,7 +265,19 @@ class App {
     if (this.dom.tapToPlayOverlay) {
       this.dom.tapToPlayOverlay.addEventListener('click', () => {
         this.dom.tapToPlayOverlay.style.display = 'none';
-        this.dom.videoElement.play();
+        this.dom.videoElement.muted = false;
+        this.dom.videoElement.volume = this.localVolume;
+        this.dom.videoElement.play().catch(() => {});
+      });
+    }
+
+    if (this.dom.videoElement) {
+      this.dom.videoElement.addEventListener('click', () => {
+        if (this.dom.tapToPlayOverlay && this.dom.tapToPlayOverlay.style.display !== 'none') {
+          this.dom.tapToPlayOverlay.style.display = 'none';
+          this.dom.videoElement.muted = false;
+          this.dom.videoElement.volume = this.localVolume;
+        }
       });
     }
 
@@ -815,8 +827,12 @@ class App {
 
           const playPromise = this.dom.videoElement.play();
           if (playPromise) {
-            playPromise.catch(() => {
-              // Browser blocked autoplay with audio -> Show Tap to Play
+            playPromise.catch((e) => {
+              console.warn('[Viewer Autoplay blocked - unmuting requires gesture]', e);
+              // Mute to allow video to start playing immediately
+              this.dom.videoElement.muted = true;
+              this.dom.videoElement.play().catch(() => {});
+              // Show Tap to Play so user can click once to get audio
               if (this.dom.tapToPlayOverlay) {
                 this.dom.tapToPlayOverlay.style.display = 'flex';
               }
