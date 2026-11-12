@@ -44,7 +44,8 @@ export class SyncEngine {
    */
   async startHost(customRoomId, initialStream) {
     this.isHost = true;
-    this.roomId = customRoomId || 'tv-' + Math.random().toString(36).substring(2, 8);
+    const randPart = Math.random().toString(36).substring(2, 6) + Math.random().toString(36).substring(2, 5);
+    this.roomId = customRoomId || 'tv-' + randPart;
     this.mediaStream = initialStream;
 
     return new Promise((resolve, reject) => {
@@ -54,7 +55,7 @@ export class SyncEngine {
           throw new Error('PeerJS library not loaded. Check internet or local vendor.');
         }
 
-        // Initialize Host Peer
+        // Initialize Host Peer with STUN and TURN Relays
         this.peer = new PeerClass(this.roomId, {
           debug: 1,
           pingInterval: 5000,
@@ -62,12 +63,17 @@ export class SyncEngine {
             iceServers: [
               { urls: 'stun:stun.l.google.com:19302' },
               { urls: 'stun:stun1.l.google.com:19302' },
-              { urls: 'stun:stun2.l.google.com:19302' },
-              { urls: 'stun:stun3.l.google.com:19302' },
-              { urls: 'stun:stun4.l.google.com:19302' },
               { urls: 'stun:stun.cloudflare.com:3478' },
-              { urls: 'stun:openrelay.metered.ca:80' }
-            ]
+              {
+                urls: [
+                  'turn:eu-0.turn.peerjs.com:3478',
+                  'turn:us-0.turn.peerjs.com:3478'
+                ],
+                username: 'peerjs',
+                credential: 'peerjsp'
+              }
+            ],
+            sdpSemantics: 'unified-plan'
           }
         });
 
@@ -144,8 +150,10 @@ export class SyncEngine {
    * @param {DataConnection} conn
    */
   handleHostIncomingConnection(conn) {
+    console.log('[SyncEngine Host] Client connected to DataChannel:', conn.peer);
+
     conn.on('open', () => {
-      // Waiting for HELLO handshake from client
+      console.log('[SyncEngine Host] DataChannel opened with client:', conn.peer);
     });
 
     conn.on('data', (data) => {
@@ -355,12 +363,17 @@ export class SyncEngine {
             iceServers: [
               { urls: 'stun:stun.l.google.com:19302' },
               { urls: 'stun:stun1.l.google.com:19302' },
-              { urls: 'stun:stun2.l.google.com:19302' },
-              { urls: 'stun:stun3.l.google.com:19302' },
-              { urls: 'stun:stun4.l.google.com:19302' },
               { urls: 'stun:stun.cloudflare.com:3478' },
-              { urls: 'stun:openrelay.metered.ca:80' }
-            ]
+              {
+                urls: [
+                  'turn:eu-0.turn.peerjs.com:3478',
+                  'turn:us-0.turn.peerjs.com:3478'
+                ],
+                username: 'peerjs',
+                credential: 'peerjsp'
+              }
+            ],
+            sdpSemantics: 'unified-plan'
           }
         });
 
@@ -372,8 +385,10 @@ export class SyncEngine {
         // Listen for incoming media call from Host
         this.peer.on('call', (call) => {
           try {
+            console.log('[SyncEngine Client] Received incoming media call from Host!');
             call.answer(); // Answer without outbound media stream
             call.on('stream', (remoteStream) => {
+              console.log('[SyncEngine Client] MediaStream tracks received:', remoteStream.getTracks());
               this.onStreamReceived(remoteStream);
             });
             call.on('error', (err) => {
@@ -401,61 +416,79 @@ export class SyncEngine {
   }
 
   /**
-   * Connects DataChannel to Host
+   * Connects DataChannel to Host with automatic fast retry and TURN fallback
    * @param {string} hostRoomId
    */
   connectToHost(hostRoomId) {
     const cleanId = String(hostRoomId).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
 
     return new Promise((resolve, reject) => {
-      // Connect without legacy { reliable: true } wrapper for fast native SCTP connection
-      this.hostConn = this.peer.connect(cleanId);
+      console.log('[SyncEngine Client] Initiating connection to host:', cleanId);
 
       let isDone = false;
+      let activeConn = null;
+
+      const setupConn = (conn) => {
+        conn.on('open', () => {
+          if (isDone) return;
+          isDone = true;
+          clearTimeout(timeout);
+          clearTimeout(retryTimer);
+          this.hostConn = conn;
+          console.log('[SyncEngine Client] Connected to host DataChannel successfully!');
+          this.onStatusChange('connected', { hostRoomId: cleanId });
+
+          // Send HELLO
+          conn.send({
+            type: 'HELLO',
+            name: this.userName,
+            color: this.userColor
+          });
+
+          // Explicitly request video stream
+          conn.send({
+            type: 'REQUEST_STREAM'
+          });
+
+          resolve(conn);
+        });
+
+        conn.on('data', (data) => {
+          this.handleClientDataReceived(data);
+        });
+
+        conn.on('close', () => {
+          this.onStatusChange('disconnected', { reason: 'Host closed the room.' });
+        });
+
+        conn.on('error', (err) => {
+          console.warn('[SyncEngine Client Conn Attempt Error]:', err);
+        });
+      };
+
+      activeConn = this.peer.connect(cleanId);
+      setupConn(activeConn);
+
+      // Auto-retry once after 6.5s if first attempt was delayed by ICE
+      const retryTimer = setTimeout(() => {
+        if (!isDone && this.peer && !this.peer.destroyed) {
+          console.log('[SyncEngine Client] Retrying connection request to host...');
+          try {
+            const retryConn = this.peer.connect(cleanId);
+            setupConn(retryConn);
+          } catch (e) {
+            console.warn('Retry error:', e);
+          }
+        }
+      }, 6500);
 
       const timeout = setTimeout(() => {
+        clearTimeout(retryTimer);
         if (!isDone) {
           isDone = true;
           reject(new Error(`Connection to host "${cleanId}" timed out. Make sure the Host tab is open and has started the party!`));
         }
-      }, 15000);
-
-      this.hostConn.on('open', () => {
-        if (isDone) return;
-        isDone = true;
-        clearTimeout(timeout);
-        this.onStatusChange('connected', { hostRoomId: cleanId });
-
-        // Send HELLO
-        this.hostConn.send({
-          type: 'HELLO',
-          name: this.userName,
-          color: this.userColor
-        });
-
-        // Explicitly request video stream
-        this.hostConn.send({
-          type: 'REQUEST_STREAM'
-        });
-
-        resolve(this.hostConn);
-      });
-
-      this.hostConn.on('data', (data) => {
-        this.handleClientDataReceived(data);
-      });
-
-      this.hostConn.on('close', () => {
-        this.onStatusChange('disconnected', { reason: 'Host closed the room.' });
-      });
-
-      this.hostConn.on('error', (err) => {
-        if (!isDone) {
-          isDone = true;
-          clearTimeout(timeout);
-          reject(err);
-        }
-      });
+      }, 16000);
     });
   }
 

@@ -79,6 +79,7 @@ class App {
       subtitlePositionValue: document.getElementById('subtitlePositionValue'),
       subtitlesOverlay: document.getElementById('subtitlesOverlay'),
       subtitleText: document.getElementById('subtitleText'),
+      downloadSubtitlesBtn: document.getElementById('downloadSubtitlesBtn'),
 
       // Loading & Autoplay Overlays
       playerLoadingState: document.getElementById('playerLoadingState'),
@@ -424,6 +425,44 @@ class App {
         this.dom.subtitlePositionValue.innerText = `${val}%`;
       });
     }
+
+    // Download Subtitles button
+    if (this.dom.downloadSubtitlesBtn) {
+      this.dom.downloadSubtitlesBtn.addEventListener('click', () => {
+        this.downloadActiveSubtitles();
+      });
+    }
+  }
+
+  downloadActiveSubtitles() {
+    if (!this.subtitleEngine || !this.subtitleEngine.currentVttText) {
+      this.uiManager.showToast('No subtitles loaded to download', 'warning');
+      return;
+    }
+
+    try {
+      const vtt = this.subtitleEngine.currentVttText;
+      let srt = vtt.replace(/^WEBVTT[^\n]*\n+/i, '').trim();
+      srt = srt.replace(/(\d{2}:\d{2}:\d{2})\.(\d{3})/g, '$1,$2');
+
+      const blocks = srt.split(/\n\s*\n/).filter(b => b.includes('-->'));
+      const indexedBlocks = blocks.map((b, i) => `${i + 1}\n${b.trim()}`).join('\n\n');
+
+      const blob = new Blob([indexedBlocks], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const baseName = (this.subtitleEngine.currentFileName || 'subtitles').replace(/\.(vtt|srt)$/i, '');
+      const downloadName = `${baseName}.srt`;
+      a.download = downloadName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      this.uiManager.showToast(`Downloaded "${downloadName}"!`, 'success');
+    } catch (e) {
+      this.uiManager.showToast('Download failed: ' + e.message, 'error');
+    }
   }
 
   selectLobbySubtitle(file) {
@@ -449,6 +488,9 @@ class App {
       if (this.dom.theaterSubtitleName && this.dom.theaterSubtitlePill) {
         this.dom.theaterSubtitleName.innerText = name;
         this.dom.theaterSubtitlePill.style.display = 'flex';
+      }
+      if (this.dom.downloadSubtitlesBtn) {
+        this.dom.downloadSubtitlesBtn.style.display = 'flex';
       }
       this.dom.ccBtn.classList.add('active');
       if (this.dom.subtitlesToggleSwitch) this.dom.subtitlesToggleSwitch.checked = true;
@@ -690,6 +732,9 @@ class App {
             this.dom.theaterSubtitleName.innerText = name;
             this.dom.theaterSubtitlePill.style.display = 'flex';
           }
+          if (this.dom.downloadSubtitlesBtn) {
+            this.dom.downloadSubtitlesBtn.style.display = 'flex';
+          }
           this.dom.ccBtn.classList.add('active');
           if (this.dom.subtitlesToggleSwitch) this.dom.subtitlesToggleSwitch.checked = true;
         } catch (subErr) {
@@ -791,6 +836,9 @@ class App {
             if (this.dom.theaterSubtitleName && this.dom.theaterSubtitlePill) {
               this.dom.theaterSubtitleName.innerText = fileName;
               this.dom.theaterSubtitlePill.style.display = 'flex';
+            }
+            if (this.dom.downloadSubtitlesBtn) {
+              this.dom.downloadSubtitlesBtn.style.display = 'flex';
             }
             this.dom.ccBtn.classList.add('active');
             if (this.dom.subtitlesToggleSwitch) this.dom.subtitlesToggleSwitch.checked = true;

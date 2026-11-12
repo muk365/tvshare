@@ -294,10 +294,16 @@
 
                       <!-- Upload Subtitle File in Theater -->
                       <input type="file" id="theaterSubtitleInput" accept=".srt,.vtt" style="display:none;">
-                      <button id="uploadSubtitleTheaterBtn" type="button" class="btn btn-secondary" style="font-size:0.8rem; padding: 0.5rem 0.75rem; justify-content: flex-start;">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                        <span>Upload .SRT / .VTT file</span>
-                      </button>
+                      <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                        <button id="uploadSubtitleTheaterBtn" type="button" class="btn btn-secondary" style="font-size:0.8rem; padding: 0.5rem 0.75rem; justify-content: flex-start;">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                          <span>Upload .SRT / .VTT file</span>
+                        </button>
+                        <button id="downloadSubtitlesBtn" type="button" class="btn btn-secondary" style="display:none; font-size:0.8rem; padding: 0.5rem 0.75rem; justify-content: flex-start; color: var(--cyan); border-color: rgba(6,182,212,0.3);">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          <span>Download Subtitles (.srt)</span>
+                        </button>
+                      </div>
 
                       <!-- Active Subtitle Pill -->
                       <div id="theaterSubtitlePill" class="subtitle-active-pill" style="display:none;">
