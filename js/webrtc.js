@@ -4,27 +4,16 @@
  * Direct P2P WebRTC data channels and ultra-low-latency media streaming.
  */
 
-// Global STUN & Working TURN Relays for 100% NAT/Firewall & Router Hairpinning Traversal
+// Global STUN & Reliable ICE Configuration
 const RTC_CONFIG = {
   iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    { urls: 'stun:openrelay.metered.ca:80' },
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' }
   ],
-  sdpSemantics: 'unified-plan',
-  iceCandidatePoolSize: 10
+  sdpSemantics: 'unified-plan'
 };
 
 // Public High-Capacity WebSocket MQTT Brokers
@@ -286,11 +275,15 @@ export class SyncEngine {
 
             // Process any early buffered ICE candidates
             if (clientObj.pendingCandidates && clientObj.pendingCandidates.length > 0) {
+              console.log(`[SyncEngine Host] Processing ${clientObj.pendingCandidates.length} buffered candidates for ${clientId}`);
               for (const cand of clientObj.pendingCandidates) {
                 try {
                   const candObj = typeof cand === 'string' ? JSON.parse(cand) : cand;
                   await clientObj.pc.addIceCandidate(new RTCIceCandidate(candObj));
-                } catch (ce) {}
+                  console.log(`[SyncEngine Host] Added buffered candidate for ${clientId}`);
+                } catch (ce) {
+                  console.warn(`[SyncEngine Host] Failed to add buffered candidate for ${clientId}:`, ce);
+                }
               }
               clientObj.pendingCandidates = [];
             }
@@ -303,16 +296,30 @@ export class SyncEngine {
 
       case 'CANDIDATE': {
         if (!data.candidate) return;
+        console.log(`[SyncEngine Host] Received ICE candidate from ${clientId}:`, data.candidate.candidate || data.candidate);
         const clientObj = this.clients.get(clientId);
         if (clientObj && clientObj.pc) {
           if (clientObj.pc.remoteDescription && clientObj.pc.remoteDescription.type) {
             try {
               const candObj = typeof data.candidate === 'string' ? JSON.parse(data.candidate) : data.candidate;
               await clientObj.pc.addIceCandidate(new RTCIceCandidate(candObj));
+              console.log(`[SyncEngine Host] Successfully added ICE candidate from ${clientId}`);
+
+              // If candidate contains .local mDNS, also try 127.0.0.1 for same-PC loopback
+              if (candObj.candidate && candObj.candidate.includes('.local')) {
+                try {
+                  const loopCand = Object.assign({}, candObj, {
+                    candidate: candObj.candidate.replace(/[a-f0-9-]+\.local/, '127.0.0.1')
+                  });
+                  await clientObj.pc.addIceCandidate(new RTCIceCandidate(loopCand));
+                  console.log(`[SyncEngine Host] Added 127.0.0.1 loopback candidate from ${clientId}`);
+                } catch (le) {}
+              }
             } catch (e) {
               console.warn('[SyncEngine Host] addIceCandidate error:', e);
             }
           } else {
+            console.log(`[SyncEngine Host] Buffering ICE candidate from ${clientId} (no remoteDescription yet)`);
             clientObj.pendingCandidates.push(data.candidate);
           }
         }
@@ -452,14 +459,37 @@ export class SyncEngine {
       }
     };
 
-    // 3. ICE Candidate gathering
+    // 3. ICE Candidate gathering & logging
     pc.onicecandidate = (event) => {
       if (event.candidate && this.signaling) {
+        console.log(`[SyncEngine Host] Gathered ICE candidate for ${clientId}:`, event.candidate.candidate);
+        const candJson = event.candidate.toJSON ? event.candidate.toJSON() : event.candidate;
         this.signaling.send(`cinesync/v2/${this.roomId}/client/${clientId}`, {
           type: 'CANDIDATE',
-          candidate: event.candidate
+          candidate: candJson
         });
+
+        // Loopback / Same-PC Traversal: If mDNS (.local) is used, also send a 127.0.0.1 loopback candidate!
+        if (candJson.candidate && candJson.candidate.includes('.local')) {
+          const loopCand = Object.assign({}, candJson, {
+            candidate: candJson.candidate.replace(/[a-f0-9-]+\.local/, '127.0.0.1')
+          });
+          this.signaling.send(`cinesync/v2/${this.roomId}/client/${clientId}`, {
+            type: 'CANDIDATE',
+            candidate: loopCand
+          });
+        }
+      } else if (!event.candidate) {
+        console.log(`[SyncEngine Host] ICE gathering complete for ${clientId}`);
       }
+    };
+
+    pc.onicecandidateerror = (event) => {
+      console.warn(`[SyncEngine Host] ICE candidate error with ${clientId}:`, event.url, event.errorCode, event.errorText);
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log(`[SyncEngine Host] Client ${clientId} iceConnectionState:`, pc.iceConnectionState);
     };
 
     // 4. Create and send SDP Offer
@@ -762,15 +792,39 @@ export class SyncEngine {
           };
         };
 
-        // ICE candidate handler
+        // ICE candidate handler & logging
         pc.onicecandidate = (event) => {
           if (event.candidate && this.signaling) {
+            console.log('[SyncEngine Client] Gathered ICE candidate:', event.candidate.candidate);
+            const candJson = event.candidate.toJSON ? event.candidate.toJSON() : event.candidate;
             this.signaling.send(`cinesync/v2/${this.roomId}/host/${this.clientId}`, {
               type: 'CANDIDATE',
               clientId: this.clientId,
-              candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate
+              candidate: candJson
             });
+
+            // Loopback / Same-PC Traversal: If mDNS (.local) is used, also send a 127.0.0.1 loopback candidate!
+            if (candJson.candidate && candJson.candidate.includes('.local')) {
+              const loopCand = Object.assign({}, candJson, {
+                candidate: candJson.candidate.replace(/[a-f0-9-]+\.local/, '127.0.0.1')
+              });
+              this.signaling.send(`cinesync/v2/${this.roomId}/host/${this.clientId}`, {
+                type: 'CANDIDATE',
+                clientId: this.clientId,
+                candidate: loopCand
+              });
+            }
+          } else if (!event.candidate) {
+            console.log('[SyncEngine Client] ICE gathering complete');
           }
+        };
+
+        pc.onicecandidateerror = (event) => {
+          console.warn('[SyncEngine Client] ICE candidate error:', event.url, event.errorCode, event.errorText);
+        };
+
+        pc.oniceconnectionstatechange = () => {
+          console.log('[SyncEngine Client] iceConnectionState:', pc.iceConnectionState);
         };
 
         // 3. Listen for signals from Host
@@ -791,10 +845,15 @@ export class SyncEngine {
 
                 // Process early buffered candidates
                 if (this.clientPendingCandidates.length > 0) {
+                  console.log(`[SyncEngine Client] Processing ${this.clientPendingCandidates.length} buffered candidates from Host`);
                   for (const cand of this.clientPendingCandidates) {
                     try {
-                      await pc.addIceCandidate(new RTCIceCandidate(cand));
-                    } catch (ce) {}
+                      const candObj = typeof cand === 'string' ? JSON.parse(cand) : cand;
+                      await pc.addIceCandidate(new RTCIceCandidate(candObj));
+                      console.log('[SyncEngine Client] Added buffered candidate from Host');
+                    } catch (ce) {
+                      console.warn('[SyncEngine Client] Failed to add buffered candidate from Host:', ce);
+                    }
                   }
                   this.clientPendingCandidates = [];
                 }
@@ -817,13 +876,28 @@ export class SyncEngine {
 
             case 'CANDIDATE': {
               if (!data.candidate) return;
+              console.log('[SyncEngine Client] Received ICE candidate from Host:', data.candidate.candidate || data.candidate);
               if (pc.remoteDescription && pc.remoteDescription.type) {
                 try {
-                  await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                  const candObj = typeof data.candidate === 'string' ? JSON.parse(data.candidate) : data.candidate;
+                  await pc.addIceCandidate(new RTCIceCandidate(candObj));
+                  console.log('[SyncEngine Client] Successfully added ICE candidate from Host');
+
+                  // If candidate contains .local mDNS, also try 127.0.0.1 for same-PC loopback
+                  if (candObj.candidate && candObj.candidate.includes('.local')) {
+                    try {
+                      const loopCand = Object.assign({}, candObj, {
+                        candidate: candObj.candidate.replace(/[a-f0-9-]+\.local/, '127.0.0.1')
+                      });
+                      await pc.addIceCandidate(new RTCIceCandidate(loopCand));
+                      console.log('[SyncEngine Client] Added 127.0.0.1 loopback candidate from Host');
+                    } catch (le) {}
+                  }
                 } catch (e) {
                   console.warn('[SyncEngine Client] addIceCandidate error:', e);
                 }
               } else {
+                console.log('[SyncEngine Client] Buffering ICE candidate from Host (no remoteDescription yet)');
                 this.clientPendingCandidates.push(data.candidate);
               }
               break;
