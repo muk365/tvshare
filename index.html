@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CineSync — Synchronized Video Sharing & Watch Party</title>
+  <meta name="description" content="Watch local videos together with friends in real-time. Zero lag, synchronized controls, and independent audio.">
+
+  <!-- Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍿</text></svg>">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Ambient Colorful Floating Orbs -->
+  <div class="ambient-bg">
+    <div class="ambient-orb ambient-orb-1"></div>
+    <div class="ambient-orb ambient-orb-2"></div>
+    <div class="ambient-orb ambient-orb-3"></div>
+  </div>
+
+  <div class="app-container">
+    <!-- Top Navigation Header -->
+    <header class="app-header">
+      <a href="./" class="brand">
+        <div class="brand-icon-wrapper">
+          <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+        </div>
+        <span class="brand-name">CineSync</span>
+      </a>
+
+      <div class="header-actions">
+        <span id="roleBadge" class="badge">🌐 READY</span>
+        <span id="viewerCountBadge" class="badge" style="display:none;">👥 1</span>
+        
+        <button id="shareRoomBtn" class="btn btn-secondary" style="display:none;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          <span>Share Room</span>
+        </button>
+
+        <button id="toggleDrawerBtn" class="btn btn-icon-only" title="Toggle Chat & Viewers" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ================================================================= -->
+    <!-- LOBBY / ENTRY VIEW                                               -->
+    <!-- ================================================================= -->
+    <main id="viewLobby" class="view-lobby">
+      <div class="lobby-wrapper">
+        <div class="lobby-hero">
+          <div class="hero-pill">
+            <span class="pulse-dot"></span>
+            <span>P2P Real-Time Video Watch Party</span>
+          </div>
+          <h1 class="hero-title">Watch Any Video Together, <br><span class="gradient-text">In Perfect Sync.</span></h1>
+          <p class="hero-desc">Host streams directly from their computer with WebRTC. Clients watch in real time with synchronized play, pause, and +/- 5s skips, while each viewer maintains independent volume control.</p>
+        </div>
+
+        <div class="lobby-grid">
+          <!-- HOST CARD -->
+          <div class="lobby-card host-card">
+            <div class="card-header">
+              <div class="card-badge-icon host-theme">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+              </div>
+              <div>
+                <h2 class="card-title">Host a Watch Party</h2>
+                <p class="card-subtitle">Choose a local file from your computer to stream</p>
+              </div>
+            </div>
+
+            <!-- Drag & Drop Zone -->
+            <input type="file" id="videoFileInput" accept="video/mp4,video/webm,video/ogg,video/mkv,video/quicktime" style="display:none;">
+            <div id="dropzone" class="dropzone">
+              <div class="dropzone-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </div>
+              <div class="dropzone-title">Click to browse or drop video file here</div>
+              <div class="dropzone-sub">Supports MP4, WebM, MKV, MOV (All HTML5 formats)</div>
+            </div>
+
+            <!-- Selected File Pill -->
+            <div id="selectedFilePill" class="selected-file-pill">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+              <div class="file-pill-info">
+                <div id="selectedFileName" class="file-pill-name">video.mp4</div>
+                <div id="selectedFileMeta" class="file-pill-meta">Ready</div>
+              </div>
+            </div>
+
+            <!-- Optional Subtitle Selection -->
+            <input type="file" id="lobbySubtitleInput" accept=".srt,.vtt" style="display:none;">
+            <div class="subtitle-lobby-box">
+              <button id="chooseSubtitleBtn" type="button" class="btn btn-secondary" style="font-size:0.8rem; padding: 0.55rem 0.85rem; width:100%; justify-content: flex-start;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 15h3M14 15h3M7 11h10"/></svg>
+                <span>+ Add Subtitles (.srt, .vtt) — Optional</span>
+              </button>
+              <div id="lobbySubtitlePill" class="subtitle-active-pill" style="display:none;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <span id="lobbySubtitleName">subtitles.srt</span>
+                <button id="removeLobbySubtitleBtn" type="button" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.1rem;line-height:1;">&times;</button>
+              </div>
+            </div>
+
+            <button id="demoVideoBtn" class="demo-video-btn" type="button">
+              ✨ No video file right now? Load Demo Synthwave Video
+            </button>
+
+            <div class="form-group">
+              <label class="form-label" for="hostNameInput">Your Display Name</label>
+              <input type="text" id="hostNameInput" class="form-input" placeholder="e.g. Alex (Host)" value="Host">
+            </div>
+
+            <button id="startHostBtn" class="btn btn-primary" style="margin-top:auto;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+              <span>Start Watch Party</span>
+            </button>
+          </div>
+
+          <!-- JOIN CARD -->
+          <div class="lobby-card join-card">
+            <div class="card-header">
+              <div class="card-badge-icon join-theme">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              </div>
+              <div>
+                <h2 class="card-title">Join a Watch Party</h2>
+                <p class="card-subtitle">Connect to an active room with code or invite link</p>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 1rem;">
+              <label class="form-label" for="roomIdInput">Room Code</label>
+              <input type="text" id="roomIdInput" class="form-input" placeholder="e.g. tv-a8k2f9" style="font-family: var(--font-mono); font-size: 1.1rem; letter-spacing: 0.05em; text-transform: lowercase;">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="joinNameInput">Your Display Name</label>
+              <input type="text" id="joinNameInput" class="form-input" placeholder="e.g. Sam" value="Viewer">
+            </div>
+
+            <div style="background: rgba(6, 182, 212, 0.06); border: 1px solid rgba(6, 182, 212, 0.2); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.5rem;">
+              <div style="font-size: 0.8rem; color: var(--cyan); font-weight: 600; margin-bottom: 0.25rem;">💡 Fast Real-Time P2P Streaming</div>
+              <div style="font-size: 0.775rem; color: var(--text-muted); line-height: 1.45;">You will directly receive the host's video & audio stream with sub-second synchronization. You can also adjust your own sound volume anytime!</div>
+            </div>
+
+            <button id="startJoinBtn" class="btn btn-glow-cyan" style="margin-top:auto;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+              <span>Join Watch Party</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ================================================================= -->
+    <!-- THEATER / ROOM VIEW                                              -->
+    <!-- ================================================================= -->
+    <main id="viewRoom" class="view-room">
+      <div class="room-layout">
+        <!-- Main Theater Stage -->
+        <section class="theater-area">
+          <!-- Dynamic Ambient Cinema Glow Canvas -->
+          <canvas id="ambientCanvas" class="cinema-ambient-canvas"></canvas>
+
+          <!-- Video Player Box -->
+          <div id="playerContainer" class="player-container">
+            <!-- Video Element -->
+            <video id="mainVideo" class="main-video" playsinline></video>
+
+            <!-- Floating Reactions Canvas -->
+            <canvas id="reactionsCanvas" class="reactions-canvas"></canvas>
+
+            <!-- Center Animated Feedback Splash -->
+            <div id="centerSplash" class="center-splash">
+              <div id="centerSplashIcon"></div>
+            </div>
+
+            <!-- Custom High-Resolution Subtitles Overlay -->
+            <div id="subtitlesOverlay" class="subtitles-overlay">
+              <span id="subtitleText" class="subtitles-text"></span>
+            </div>
+
+            <!-- Overlay UI -->
+            <div id="playerOverlay" class="player-overlay">
+              <!-- Top Info Bar -->
+              <div class="overlay-top">
+                <div class="video-title-pill">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                  <span id="videoTitle">CineSync Player</span>
+                </div>
+                <div id="streamTypeBadge" class="badge-stream-type">P2P LIVE</div>
+              </div>
+
+              <!-- Bottom Controls -->
+              <div class="overlay-bottom">
+                <!-- Timeline Progress Scrubber -->
+                <div id="timelineWrapper" class="timeline-wrapper">
+                  <div class="timeline-track">
+                    <div id="timelineBuffer" class="timeline-buffer"></div>
+                    <div id="timelineProgress" class="timeline-progress">
+                      <div class="timeline-thumb"></div>
+                    </div>
+                  </div>
+                  <div id="timelineTooltip" class="timeline-tooltip">00:00</div>
+                </div>
+
+                <!-- Main Controls Bar -->
+                <div class="control-bar">
+                  <!-- Left: Play/Pause, -5s, +5s, Time -->
+                  <div class="controls-left">
+                    <button id="playPauseBtn" class="control-btn play-btn" title="Play / Pause (Space)">
+                      <svg id="playPauseIcon" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="5 3 19 12 5 21 5 3"/>
+                      </svg>
+                    </button>
+
+                    <button id="skipBackBtn" class="control-btn skip-btn" title="Skip -5s (Left Arrow)">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M11 14l-5-5 5-5"/><path d="M18 14l-5-5 5-5"/>
+                      </svg>
+                      <span>-5s</span>
+                    </button>
+
+                    <button id="skipForwardBtn" class="control-btn skip-btn" title="Skip +5s (Right Arrow)">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M13 14l5-5-5-5"/><path d="M6 14l5-5-5-5"/>
+                      </svg>
+                      <span>+5s</span>
+                    </button>
+
+                    <div class="time-display">
+                      <span id="timeCurrent" class="time-current">00:00</span>
+                      <span>/</span>
+                      <span id="timeTotal">00:00</span>
+                    </div>
+                  </div>
+
+                  <!-- Center: Quick Reaction Emojis -->
+                  <div class="controls-center">
+                    <div class="quick-reactions">
+                      <button class="reaction-btn" data-emoji="❤️" title="Love">❤️</button>
+                      <button class="reaction-btn" data-emoji="🔥" title="Fire">🔥</button>
+                      <button class="reaction-btn" data-emoji="🍿" title="Popcorn">🍿</button>
+                      <button class="reaction-btn" data-emoji="😂" title="Laugh">😂</button>
+                      <button class="reaction-btn" data-emoji="👏" title="Clap">👏</button>
+                      <button class="reaction-btn" data-emoji="🎉" title="Party">🎉</button>
+                    </div>
+                  </div>
+
+                  <!-- Right: Independent Volume, Subtitles, PiP, Fullscreen -->
+                  <div class="controls-right" style="position: relative;">
+                    <!-- Floating Subtitles Menu Popup -->
+                    <div id="subtitlesMenu" class="subtitles-menu-popup">
+                      <div class="subtitles-menu-header">
+                        <div class="subtitles-menu-title">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 15h3M14 15h3M7 11h10"/></svg>
+                          <span>Subtitles Settings</span>
+                        </div>
+                        <label class="switch">
+                          <input type="checkbox" id="subtitlesToggleSwitch" checked>
+                          <span class="switch-slider"></span>
+                        </label>
+                      </div>
+
+                      <!-- Upload Subtitle File in Theater -->
+                      <input type="file" id="theaterSubtitleInput" accept=".srt,.vtt" style="display:none;">
+                      <button id="uploadSubtitleTheaterBtn" type="button" class="btn btn-secondary" style="font-size:0.8rem; padding: 0.5rem 0.75rem; justify-content: flex-start;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        <span>Upload .SRT / .VTT file</span>
+                      </button>
+
+                      <!-- Active Subtitle Pill -->
+                      <div id="theaterSubtitlePill" class="subtitle-active-pill" style="display:none;">
+                        <span id="theaterSubtitleName">No file loaded</span>
+                      </div>
+
+                      <!-- Sync Timing Offset -->
+                      <div class="subtitles-row">
+                        <span class="subtitles-row-label">Sync Offset</span>
+                        <div class="offset-stepper">
+                          <button id="offsetMinusBtn" type="button" class="offset-btn" title="Display 0.5s earlier">-0.5s</button>
+                          <span id="offsetValue" class="offset-value">0.0s</span>
+                          <button id="offsetPlusBtn" type="button" class="offset-btn" title="Display 0.5s later">+0.5s</button>
+                          <button id="offsetResetBtn" type="button" class="offset-btn" title="Reset offset" style="font-size:0.7rem;">↺</button>
+                        </div>
+                      </div>
+
+                      <!-- Font Size -->
+                      <div class="subtitles-row">
+                        <span class="subtitles-row-label">Font Size</span>
+                        <div class="size-pills">
+                          <button class="size-pill-btn" type="button" data-size="small" title="Small (24px)">S</button>
+                          <button class="size-pill-btn active" type="button" data-size="normal" title="Medium (34px)">M</button>
+                          <button class="size-pill-btn" type="button" data-size="large" title="Large (46px)">L</button>
+                        </div>
+                      </div>
+
+                      <!-- Vertical Position Slider (Move upward/downward) -->
+                      <div class="subtitles-row">
+                        <span class="subtitles-row-label">Height (Up / Down)</span>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                          <input type="range" id="subtitlePositionSlider" class="volume-slider" min="5" max="75" value="12" style="width: 85px;" title="Slide subtitles upward or downward">
+                          <span id="subtitlePositionValue" class="offset-value" style="min-width: 32px;">12%</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Independent Audio Volume -->
+                    <div class="volume-group" title="Adjust your independent volume">
+                      <button id="volumeBtn" class="control-btn" style="width:30px;height:30px;">
+                        <svg id="volumeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                        </svg>
+                      </button>
+                      <input id="volumeSlider" class="volume-slider" type="range" min="0" max="100" value="90">
+                    </div>
+
+                    <!-- Subtitles CC Button -->
+                    <button id="ccBtn" class="control-btn cc-btn active" title="Subtitles (CC)">
+                      <span>CC</span>
+                    </button>
+
+                    <button id="pipBtn" class="control-btn" title="Picture in Picture">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><rect x="12" y="12" width="8" height="8" rx="1.5"/>
+                      </svg>
+                    </button>
+
+                    <button id="fullscreenBtn" class="control-btn" title="Fullscreen (F)">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Right Side Drawer (Chat, Viewers, Room Info) -->
+        <aside id="sideDrawer" class="side-drawer">
+          <div class="drawer-tabs">
+            <button class="drawer-tab active" data-tab="chat">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              <span>Chat</span>
+            </button>
+            <button class="drawer-tab" data-tab="viewers">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+              <span>Viewers</span>
+            </button>
+            <button class="drawer-tab" data-tab="settings">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span>Room</span>
+            </button>
+          </div>
+
+          <div class="drawer-content">
+            <!-- Tab Panel: Live Chat -->
+            <div id="panel-chat" class="tab-panel active">
+              <div id="chatMessages" class="chat-messages">
+                <div class="chat-bubble system">
+                  Welcome to CineSync! Chat messages and reactions are shared in real time with everyone in the room.
+                </div>
+              </div>
+
+              <div class="chat-input-bar">
+                <input type="text" id="chatInput" class="chat-input" placeholder="Type a message...">
+                <button id="sendChatBtn" class="btn btn-primary" style="padding: 0.65rem 0.95rem;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Tab Panel: Viewers List -->
+            <div id="panel-viewers" class="tab-panel">
+              <div id="viewersList" class="viewers-list">
+                <!-- Dynamically populated -->
+              </div>
+            </div>
+
+            <!-- Tab Panel: Settings -->
+            <div id="panel-settings" class="tab-panel">
+              <div class="settings-group">
+                <div id="hostOnlySettings" class="setting-row" style="display:none;">
+                  <div class="setting-label-block">
+                    <span class="setting-title">Allow Viewers to Control Playback</span>
+                    <span class="setting-desc">Let guests play, pause, seek, and skip +/-5s</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="allowControlsSwitch" checked>
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <div class="setting-row">
+                  <div class="setting-label-block">
+                    <span class="setting-title">Independent Sound</span>
+                    <span class="setting-desc">Each viewer's volume slider controls only their own audio</span>
+                  </div>
+                  <span class="badge" style="background: rgba(16,185,129,0.15); color: #34d399;">Active</span>
+                </div>
+
+                <div class="setting-row" style="margin-top: 1.5rem;">
+                  <button id="drawerShareBtn" class="btn btn-glow-cyan" style="width: 100%;" onclick="window.cinesyncApp.openShareModal()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                    <span>Invite Friends (Link & QR)</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- SHARE ROOM MODAL                                                    -->
+  <!-- =================================================================== -->
+  <div id="shareModal" class="modal-backdrop">
+    <div class="modal-box">
+      <button id="closeShareModalBtn" class="modal-close-btn" title="Close">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+
+      <h3 class="modal-title">Invite Friends to Watch</h3>
+      <p class="modal-desc">Anyone with this link or QR code can join your watch party instantly in their browser with zero install.</p>
+
+      <!-- QR Code -->
+      <div id="qrContainer" class="qr-container"></div>
+
+      <!-- Copy Link Pill -->
+      <div class="copy-link-pill">
+        <span id="shareRoomLink" class="link-text">https://.../?room=tv-123456</span>
+      </div>
+
+      <div style="display: flex; gap: 0.75rem;">
+        <button id="copyLinkBtn" class="btn btn-primary" style="flex: 1;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span>Copy Invite Link</span>
+        </button>
+      </div>
+
+      <div style="margin-top: 1rem; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
+        Room Code: <strong id="shareRoomCode" style="color: var(--cyan); font-family: var(--font-mono);">---</strong>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Vendor Scripts (With CDN fallbacks) -->
+  <script src="vendor/peerjs.min.js"></script>
+  <script src="vendor/confetti.min.js"></script>
+  <script src="vendor/qrcode.min.js"></script>
+
+  <!-- Main ES Module Application -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+1
+00:00:01,000 --> 00:00:04,500
+Bienvenue sur CineSync !
+
+2
+00:00:05,000 --> 00:00:08,500
+La lecture est parfaitement synchronisée entre l'hôte et les invités.
+
+3
+00:00:09,000 --> 00:00:13,000
+Le son et les sous-titres restent totalement indépendants !
+
+4
+00:00:14,000 --> 00:00:18,000
+Bon visionnage et bonne séance cinéma ! 🍿✨
