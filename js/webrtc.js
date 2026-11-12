@@ -4,7 +4,7 @@
  * Direct P2P WebRTC data channels and ultra-low-latency media streaming.
  */
 
-// Global STUN & Free Public TURN Servers for 100% NAT/Firewall Traversal
+// Global STUN Servers for Fast, Zero-Latency NAT Traversal
 const RTC_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -12,16 +12,7 @@ const RTC_CONFIG = {
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    {
-      urls: [
-        'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turn:openrelay.metered.ca:443?transport=tcp'
-      ],
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
+    { urls: 'stun:stun.cloudflare.com:3478' }
   ],
   sdpSemantics: 'unified-plan',
   iceCandidatePoolSize: 10
@@ -303,7 +294,8 @@ export class SyncEngine {
         if (clientObj && clientObj.pc) {
           if (clientObj.pc.remoteDescription && clientObj.pc.remoteDescription.type) {
             try {
-              await clientObj.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+              const candObj = typeof data.candidate === 'string' ? JSON.parse(data.candidate) : data.candidate;
+              await clientObj.pc.addIceCandidate(new RTCIceCandidate(candObj));
             } catch (e) {
               console.warn('[SyncEngine Host] addIceCandidate error:', e);
             }
@@ -311,6 +303,34 @@ export class SyncEngine {
             clientObj.pendingCandidates.push(data.candidate);
           }
         }
+        break;
+      }
+
+      case 'REQUEST_ACTION': {
+        console.log(`[SyncEngine Host] Action request via signaling: ${data.action} by ${data.sender}`);
+        if (this.allowClientControls) {
+          this.onClientActionRequest(data.action, data.time, data.sender || 'Viewer');
+        }
+        break;
+      }
+
+      case 'CHAT': {
+        this.broadcast({
+          type: 'CHAT',
+          text: data.text,
+          sender: data.sender || 'Viewer',
+          color: data.color || '#8B5CF6',
+          time: Date.now()
+        });
+        break;
+      }
+
+      case 'REACTION': {
+        this.broadcast({
+          type: 'REACTION',
+          emoji: data.emoji,
+          sender: data.sender || 'Viewer'
+        });
         break;
       }
     }
@@ -882,13 +902,22 @@ export class SyncEngine {
   sendActionRequest(action, time = 0) {
     if (this.isHost) {
       this.onClientActionRequest(action, time, `${this.userName} (Host)`);
-    } else if (this.hostConn && this.hostConn.open) {
-      this.hostConn.send({
+    } else {
+      const payload = {
         type: 'REQUEST_ACTION',
         action,
         time,
-        sender: this.userName
-      });
+        sender: this.userName,
+        clientId: this.clientId
+      };
+      let sent = false;
+      if (this.hostConn && this.hostConn.open) {
+        this.hostConn.send(payload);
+        sent = true;
+      }
+      if (!sent && this.signaling) {
+        this.signaling.send(`cinesync/v2/${this.roomId}/host`, payload);
+      }
     }
   }
 
@@ -902,13 +931,19 @@ export class SyncEngine {
         color: this.userColor,
         time: Date.now()
       });
-    } else if (this.hostConn && this.hostConn.open) {
-      this.hostConn.send({
+    } else {
+      const payload = {
         type: 'CHAT',
         text: text.trim(),
         sender: this.userName,
-        color: this.userColor
-      });
+        color: this.userColor,
+        clientId: this.clientId
+      };
+      if (this.hostConn && this.hostConn.open) {
+        this.hostConn.send(payload);
+      } else if (this.signaling) {
+        this.signaling.send(`cinesync/v2/${this.roomId}/host`, payload);
+      }
     }
   }
 
@@ -919,12 +954,18 @@ export class SyncEngine {
         emoji,
         sender: `${this.userName} (Host)`
       });
-    } else if (this.hostConn && this.hostConn.open) {
-      this.hostConn.send({
+    } else {
+      const payload = {
         type: 'REACTION',
         emoji,
-        sender: this.userName
-      });
+        sender: this.userName,
+        clientId: this.clientId
+      };
+      if (this.hostConn && this.hostConn.open) {
+        this.hostConn.send(payload);
+      } else if (this.signaling) {
+        this.signaling.send(`cinesync/v2/${this.roomId}/host`, payload);
+      }
     }
   }
 

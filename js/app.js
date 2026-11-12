@@ -876,13 +876,27 @@ class App {
               this.dom.timelineProgress.style.width = `${pct}%`;
             }
           }
+
+          // Sync play/pause state from host
+          if (data.isPlaying && this.dom.videoElement.paused) {
+            this.dom.videoElement.play().catch(() => {});
+          } else if (data.isPlaying === false && !this.dom.videoElement.paused) {
+            this.dom.videoElement.pause();
+          }
         },
         onActionExecuted: (data) => {
           this.uiManager.showToast(`${data.sender}: ${data.action.replace('_', ' ')}`, 'info', 2000);
-          if (data.action === 'PLAY') this.uiManager.triggerCenterSplash('play');
-          if (data.action === 'PAUSE') this.uiManager.triggerCenterSplash('pause');
-          if (data.action === 'SKIP_FORWARD') this.uiManager.triggerCenterSplash('forward5');
-          if (data.action === 'SKIP_BACKWARD') this.uiManager.triggerCenterSplash('backward5');
+          if (data.action === 'PLAY') {
+            this.uiManager.triggerCenterSplash('play');
+            this.dom.videoElement.play().catch(() => {});
+          } else if (data.action === 'PAUSE') {
+            this.uiManager.triggerCenterSplash('pause');
+            this.dom.videoElement.pause();
+          } else if (data.action === 'SKIP_FORWARD') {
+            this.uiManager.triggerCenterSplash('forward5');
+          } else if (data.action === 'SKIP_BACKWARD') {
+            this.uiManager.triggerCenterSplash('backward5');
+          }
         },
         onStatusChange: (status, info) => {
           if (status === 'connected') {
@@ -975,12 +989,34 @@ class App {
         time: video.currentTime,
         sender
       });
+      this.syncEngine.broadcast({
+        type: 'SYNC_STATE',
+        currentTime: video.currentTime,
+        duration: video.duration || 0,
+        isPlaying: !video.paused,
+        title: this.currentVideoFile ? this.currentVideoFile.name : '',
+        allowViewerControls: this.allowViewerControls
+      });
     }
   }
 
   togglePlayPause() {
     const isPlaying = !this.dom.videoElement.paused;
     const action = isPlaying ? 'PAUSE' : 'PLAY';
+
+    // Viewer gesture immediately unblocks local video element and starts playback!
+    if (!this.isHost) {
+      if (this.dom.tapToPlayOverlay) {
+        this.dom.tapToPlayOverlay.style.display = 'none';
+      }
+      this.dom.videoElement.muted = false;
+      this.dom.videoElement.volume = this.localVolume;
+      if (action === 'PLAY') {
+        this.dom.videoElement.play().catch(() => {});
+      } else {
+        this.dom.videoElement.pause();
+      }
+    }
 
     if (this.isHost) {
       this.executePlaybackAction(action, this.dom.videoElement.currentTime, `${this.syncEngine.userName} (Host)`);
