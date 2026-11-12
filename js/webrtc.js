@@ -4,15 +4,24 @@
  * Direct P2P WebRTC data channels and ultra-low-latency media streaming.
  */
 
-// Global STUN Servers for Fast, Zero-Latency NAT Traversal
+// Global STUN & Working TURN Relays for 100% NAT/Firewall & Router Hairpinning Traversal
 const RTC_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' }
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:openrelay.metered.ca:80' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ],
   sdpSemantics: 'unified-plan',
   iceCandidatePoolSize: 10
@@ -235,7 +244,6 @@ export class SyncEngine {
     await this.signaling.connect();
 
     // Host subscribes to incoming messages from any viewer in this room
-    await this.signaling.subscribe(`cinesync/v2/${this.roomId}/host`);
     await this.signaling.subscribe(`cinesync/v2/${this.roomId}/host/#`);
 
     // Listen for viewer signals
@@ -268,6 +276,10 @@ export class SyncEngine {
       case 'ANSWER': {
         const clientObj = this.clients.get(clientId);
         if (clientObj && clientObj.pc) {
+          if (clientObj.pc.signalingState !== 'have-local-offer') {
+            console.log(`[SyncEngine Host] Answer from ${clientId} received in state ${clientObj.pc.signalingState}. Ignoring duplicate.`);
+            return;
+          }
           try {
             console.log(`[SyncEngine Host] Applying WebRTC Answer from ${clientId}`);
             await clientObj.pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
@@ -276,7 +288,8 @@ export class SyncEngine {
             if (clientObj.pendingCandidates && clientObj.pendingCandidates.length > 0) {
               for (const cand of clientObj.pendingCandidates) {
                 try {
-                  await clientObj.pc.addIceCandidate(new RTCIceCandidate(cand));
+                  const candObj = typeof cand === 'string' ? JSON.parse(cand) : cand;
+                  await clientObj.pc.addIceCandidate(new RTCIceCandidate(candObj));
                 } catch (ce) {}
               }
               clientObj.pendingCandidates = [];
@@ -752,10 +765,10 @@ export class SyncEngine {
         // ICE candidate handler
         pc.onicecandidate = (event) => {
           if (event.candidate && this.signaling) {
-            this.signaling.send(`cinesync/v2/${this.roomId}/host`, {
+            this.signaling.send(`cinesync/v2/${this.roomId}/host/${this.clientId}`, {
               type: 'CANDIDATE',
               clientId: this.clientId,
-              candidate: event.candidate
+              candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate
             });
           }
         };
@@ -790,7 +803,7 @@ export class SyncEngine {
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
 
-                this.signaling.send(`cinesync/v2/${this.roomId}/host`, {
+                this.signaling.send(`cinesync/v2/${this.roomId}/host/${this.clientId}`, {
                   type: 'ANSWER',
                   clientId: this.clientId,
                   sdp: pc.localDescription
@@ -822,7 +835,7 @@ export class SyncEngine {
         const sendJoin = () => {
           if (isResolved || hasReceivedOffer) return;
           console.log(`[SyncEngine Client] Sending JOIN signal to Host (room: ${this.roomId})...`);
-          this.signaling.send(`cinesync/v2/${this.roomId}/host`, {
+          this.signaling.send(`cinesync/v2/${this.roomId}/host/${this.clientId}`, {
             type: 'JOIN',
             clientId: this.clientId,
             name: this.userName,
@@ -916,7 +929,7 @@ export class SyncEngine {
         sent = true;
       }
       if (!sent && this.signaling) {
-        this.signaling.send(`cinesync/v2/${this.roomId}/host`, payload);
+        this.signaling.send(`cinesync/v2/${this.roomId}/host/${this.clientId}`, payload);
       }
     }
   }
@@ -942,7 +955,7 @@ export class SyncEngine {
       if (this.hostConn && this.hostConn.open) {
         this.hostConn.send(payload);
       } else if (this.signaling) {
-        this.signaling.send(`cinesync/v2/${this.roomId}/host`, payload);
+        this.signaling.send(`cinesync/v2/${this.roomId}/host/${this.clientId}`, payload);
       }
     }
   }
@@ -964,7 +977,7 @@ export class SyncEngine {
       if (this.hostConn && this.hostConn.open) {
         this.hostConn.send(payload);
       } else if (this.signaling) {
-        this.signaling.send(`cinesync/v2/${this.roomId}/host`, payload);
+        this.signaling.send(`cinesync/v2/${this.roomId}/host/${this.clientId}`, payload);
       }
     }
   }
