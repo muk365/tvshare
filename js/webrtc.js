@@ -60,7 +60,12 @@ export class SyncEngine {
           config: {
             iceServers: [
               { urls: 'stun:stun.l.google.com:19302' },
-              { urls: 'stun:global.stun.twilio.com:3478' }
+              { urls: 'stun:stun1.l.google.com:19302' },
+              { urls: 'stun:stun2.l.google.com:19302' },
+              { urls: 'stun:stun3.l.google.com:19302' },
+              { urls: 'stun:stun4.l.google.com:19302' },
+              { urls: 'stun:stun.cloudflare.com:3478' },
+              { urls: 'stun:openrelay.metered.ca:80' }
             ]
           }
         });
@@ -210,6 +215,19 @@ export class SyncEngine {
         break;
       }
 
+      case 'REQUEST_STREAM': {
+        if (this.mediaStream) {
+          try {
+            const clientCall = this.peer.call(conn.peer, this.mediaStream);
+            const client = this.clients.get(conn.peer);
+            if (client) client.call = clientCall;
+          } catch (err) {
+            console.error('[SyncEngine] Re-call failed:', err);
+          }
+        }
+        break;
+      }
+
       case 'CHAT': {
         // Relay chat to everyone including sender
         this.broadcast({
@@ -323,7 +341,12 @@ export class SyncEngine {
           config: {
             iceServers: [
               { urls: 'stun:stun.l.google.com:19302' },
-              { urls: 'stun:global.stun.twilio.com:3478' }
+              { urls: 'stun:stun1.l.google.com:19302' },
+              { urls: 'stun:stun2.l.google.com:19302' },
+              { urls: 'stun:stun3.l.google.com:19302' },
+              { urls: 'stun:stun4.l.google.com:19302' },
+              { urls: 'stun:stun.cloudflare.com:3478' },
+              { urls: 'stun:openrelay.metered.ca:80' }
             ]
           }
         });
@@ -335,13 +358,17 @@ export class SyncEngine {
 
         // Listen for incoming media call from Host
         this.peer.on('call', (call) => {
-          call.answer(); // Answer without outbound media stream
-          call.on('stream', (remoteStream) => {
-            this.onStreamReceived(remoteStream);
-          });
-          call.on('error', (err) => {
-            console.error('[SyncEngine Client Call Error]', err);
-          });
+          try {
+            call.answer(); // Answer without outbound media stream
+            call.on('stream', (remoteStream) => {
+              this.onStreamReceived(remoteStream);
+            });
+            call.on('error', (err) => {
+              console.warn('[SyncEngine Client Call Error]', err);
+            });
+          } catch (callErr) {
+            console.error('[SyncEngine Answer Error]', callErr);
+          }
         });
 
         this.peer.on('error', (err) => {
@@ -491,6 +518,12 @@ export class SyncEngine {
         emoji,
         sender: this.userName
       });
+    }
+  }
+
+  requestStreamFromHost() {
+    if (this.hostConn && this.hostConn.open) {
+      this.hostConn.send({ type: 'REQUEST_STREAM' });
     }
   }
 

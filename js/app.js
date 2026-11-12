@@ -80,6 +80,14 @@ class App {
       subtitlesOverlay: document.getElementById('subtitlesOverlay'),
       subtitleText: document.getElementById('subtitleText'),
 
+      // Loading & Autoplay Overlays
+      playerLoadingState: document.getElementById('playerLoadingState'),
+      loadingTitle: document.getElementById('loadingTitle'),
+      loadingSub: document.getElementById('loadingSub'),
+      loadingRoomCode: document.getElementById('loadingRoomCode'),
+      retryConnectBtn: document.getElementById('retryConnectBtn'),
+      tapToPlayOverlay: document.getElementById('tapToPlayOverlay'),
+
       // Controls
       playPauseBtn: document.getElementById('playPauseBtn'),
       playPauseIcon: document.getElementById('playPauseIcon'),
@@ -141,14 +149,17 @@ class App {
   setupUrlParams() {
     const params = new URLSearchParams(window.location.search);
     const room = params.get('room');
-    if (room && this.dom.roomIdInput) {
-      this.dom.roomIdInput.value = room;
-      this.uiManager.showToast(`Room code "${room}" detected from invite link!`, 'info');
-      // Scroll to join card
+    if (room) {
+      if (this.dom.roomIdInput) this.dom.roomIdInput.value = room;
+      const savedName = localStorage.getItem('cinesync_username') || `Viewer-${Math.floor(100 + Math.random() * 900)}`;
+      if (this.dom.joinNameInput) this.dom.joinNameInput.value = savedName;
+
+      this.uiManager.showToast(`Joining Watch Party: ${room}...`, 'info');
+
+      // Auto-open Theater Player directly!
       setTimeout(() => {
-        const joinCard = document.querySelector('.join-card');
-        if (joinCard) joinCard.scrollIntoView({ behavior: 'smooth' });
-      }, 300);
+        this.handleStartJoin(room, savedName);
+      }, 250);
     }
   }
 
@@ -248,6 +259,20 @@ class App {
       const link = this.getInviteLink();
       this.uiManager.copyToClipboard(link, this.dom.copyLinkBtn, 'Copy Link');
     });
+
+    // Tap to Play Overlay & Retry Button
+    if (this.dom.tapToPlayOverlay) {
+      this.dom.tapToPlayOverlay.addEventListener('click', () => {
+        this.dom.tapToPlayOverlay.style.display = 'none';
+        this.dom.videoElement.play();
+      });
+    }
+
+    if (this.dom.retryConnectBtn) {
+      this.dom.retryConnectBtn.addEventListener('click', () => {
+        this.handleStartJoin();
+      });
+    }
 
     // Autohide Controls on Idle
     this.dom.playerContainer.addEventListener('mousemove', () => this.resetIdleTimer());
@@ -689,19 +714,41 @@ class App {
   // CLIENT / VIEWER WORKFLOW
   // =========================================================================
 
-  async handleStartJoin() {
-    const clientName = this.dom.joinNameInput.value.trim() || 'Viewer';
-    const targetRoomId = this.dom.roomIdInput.value.trim();
+  async handleStartJoin(roomOverride = null, nameOverride = null) {
+    const clientName = nameOverride || this.dom.joinNameInput.value.trim() || 'Viewer';
+    const targetRoomId = roomOverride || this.dom.roomIdInput.value.trim();
 
     if (!targetRoomId) {
-      this.uiManager.showToast('Please enter a valid 6-character Room Code!', 'warning');
+      this.uiManager.showToast('Please enter a valid Room Code!', 'warning');
       this.dom.roomIdInput.focus();
       return;
     }
 
     this.isHost = false;
-    this.dom.joinBtn.disabled = true;
-    this.dom.joinBtn.innerText = 'Connecting to Host...';
+    this.currentRoomId = targetRoomId;
+    localStorage.setItem('cinesync_username', clientName);
+
+    // 1. Open Theater Player View IMMEDIATELY!
+    this.enterTheaterView(`Watch Party (${targetRoomId})`, false);
+
+    // 2. Show Animated Connecting Loader over video player
+    if (this.dom.playerLoadingState) {
+      this.dom.playerLoadingState.style.display = 'flex';
+      this.dom.loadingTitle.innerText = 'Connecting to Host...';
+      this.dom.loadingSub.innerText = `Connecting to room: ${targetRoomId}`;
+      if (this.dom.loadingRoomCode) this.dom.loadingRoomCode.innerText = targetRoomId;
+      if (this.dom.retryConnectBtn) this.dom.retryConnectBtn.style.display = 'none';
+    }
+
+    // Connection timeout reminder if host has not started yet
+    const connectTimer = setTimeout(() => {
+      if (this.dom.playerLoadingState && this.dom.playerLoadingState.style.display !== 'none') {
+        this.dom.loadingTitle.innerText = 'Connecting is taking a moment...';
+        this.dom.loadingSub.innerText = 'Make sure the Host is online and has started the Watch Party!';
+        if (this.dom.retryConnectBtn) this.dom.retryConnectBtn.style.display = 'inline-flex';
+        if (this.syncEngine) this.syncEngine.requestStreamFromHost();
+      }
+    }, 9000);
 
     try {
       this.syncEngine = new SyncEngine({
@@ -709,12 +756,24 @@ class App {
         userName: clientName,
         roomId: targetRoomId,
         onStreamReceived: (remoteStream) => {
+          clearTimeout(connectTimer);
+          if (this.dom.playerLoadingState) {
+            this.dom.playerLoadingState.style.display = 'none';
+          }
+
           this.dom.videoElement.srcObject = remoteStream;
           this.dom.videoElement.volume = this.localVolume;
-          this.dom.videoElement.play().catch(() => {
-            this.uiManager.showToast('Click anywhere on the video to enable audio playback!', 'info', 5000);
-          });
-          this.enterTheaterView('Live Stream from Host', false);
+
+          const playPromise = this.dom.videoElement.play();
+          if (playPromise) {
+            playPromise.catch(() => {
+              // Browser blocked autoplay with audio -> Show Tap to Play
+              if (this.dom.tapToPlayOverlay) {
+                this.dom.tapToPlayOverlay.style.display = 'flex';
+              }
+            });
+          }
+
           this.uiManager.startAmbientBacklight(this.dom.videoElement);
         },
         onPeersUpdated: (peers) => this.updatePeersList(peers),
@@ -760,11 +819,14 @@ class App {
         onStatusChange: (status, info) => {
           if (status === 'connected') {
             this.currentRoomId = targetRoomId;
+            if (this.dom.loadingTitle) this.dom.loadingTitle.innerText = 'Connected! Receiving video stream...';
             this.uiManager.showToast('Connected to Watch Party!', 'success');
           } else if (status === 'error') {
-            this.uiManager.showToast(`Connection failed: ${info.error.message || info.error}`, 'error');
-            this.dom.joinBtn.disabled = false;
-            this.dom.joinBtn.innerText = 'Join Watch Party';
+            clearTimeout(connectTimer);
+            if (this.dom.loadingTitle) this.dom.loadingTitle.innerText = 'Connection Failed';
+            if (this.dom.loadingSub) this.dom.loadingSub.innerText = `${info.error.message || info.error}`;
+            if (this.dom.retryConnectBtn) this.dom.retryConnectBtn.style.display = 'inline-flex';
+            this.uiManager.showToast(`Connection error: ${info.error.message || info.error}`, 'error');
           } else if (status === 'notice') {
             this.uiManager.showToast(info.message, 'warning');
           }
@@ -774,10 +836,12 @@ class App {
       await this.syncEngine.startClient(targetRoomId);
 
     } catch (err) {
+      clearTimeout(connectTimer);
       console.error('[Join Init Error]', err);
+      if (this.dom.loadingTitle) this.dom.loadingTitle.innerText = 'Connection Error';
+      if (this.dom.loadingSub) this.dom.loadingSub.innerText = err.message;
+      if (this.dom.retryConnectBtn) this.dom.retryConnectBtn.style.display = 'inline-flex';
       this.uiManager.showToast(`Join failed: ${err.message}`, 'error');
-      this.dom.joinBtn.disabled = false;
-      this.dom.joinBtn.innerText = 'Join Watch Party';
     }
   }
 

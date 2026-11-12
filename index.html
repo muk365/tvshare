@@ -186,6 +186,25 @@
               <div id="centerSplashIcon"></div>
             </div>
 
+            <!-- Loading & Connecting State for Viewers -->
+            <div id="playerLoadingState" class="player-loading-state" style="display:none;">
+              <div class="loading-spinner"></div>
+              <div id="loadingTitle" class="loading-title">Connecting to Host...</div>
+              <div id="loadingSub" class="loading-sub">Connecting to Watch Party (<span id="loadingRoomCode"></span>)</div>
+              <button id="retryConnectBtn" type="button" class="btn btn-secondary" style="display:none; margin-top: 1rem; font-size: 0.85rem;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+                <span>Retry Connection</span>
+              </button>
+            </div>
+
+            <!-- Tap to Play Overlay (Unblocks Autoplay on Browsers) -->
+            <div id="tapToPlayOverlay" class="tap-to-play-overlay" style="display:none;">
+              <div class="tap-play-circle">
+                <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              </div>
+              <span class="tap-play-label">Click anywhere to start watching</span>
+            </div>
+
             <!-- Custom High-Resolution Subtitles Overlay -->
             <div id="subtitlesOverlay" class="subtitles-overlay">
               <span id="subtitleText" class="subtitles-text"></span>
